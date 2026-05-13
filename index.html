@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="it">
+<script>
+// --- CONFIGURAZIONE ---
+const SCRIPT_URL = 'IL_TUO_URL_DI_GOOGLE_APPS_SCRIPT'; 
+
+let state = {
+  projects: [],
+  tasks: [],
+  notes: [],
+  collaborators: [],
+  currentView: 'dashboard',
+  currentProject: null
+};
+
+// Funzione Iniziale con "Paracadute"
+async function init() {
+  console.log("Inizializzazione...");
+  
+  // 1. Carica subito i dati locali per non far aspettare l'utente
+  const localData = localStorage.getItem('projectos_data');
+  if (localData) {
+    state = JSON.parse(localData);
+    refreshCurrent(); // Mostra subito quello che c'è
+  }
+
+  // 2. Prova a scaricare da Drive con un limite di tempo (5 secondi)
+  if (SCRIPT_URL && SCRIPT_URL.startsWith('http')) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(SCRIPT_URL, { signal: controller.signal });
+      clearTimeout(id);
+      const remoteData = await response.json();
+      if (remoteData) {
+        state = remoteData;
+        localStorage.setItem('projectos_data', JSON.stringify(state));
+        console.log("Dati aggiornati da Drive");
+        refreshCurrent();
+      }
+    } catch (e) {
+      console.warn("Drive non raggiungibile o timeout. Uso dati locali.");
+    }
+  }
+  
+  renderProjectList();
+  if(state.currentView === 'dashboard') showDashboard();
+}
+
+// SALVATAGGIO (Aggiornato per non bloccare l'interfaccia)
+async function save() {
+  localStorage.setItem('projectos_data', JSON.stringify(state));
+  
+  if (SCRIPT_URL && SCRIPT_URL.startsWith('http')) {
+    // Usiamo no-cors per evitare problemi di permessi browser
+    fetch(SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify(state)
+    }).catch(e => console.error("Errore invio Drive:", e));
+  }
+}
+
+// ORDINAMENTO TASK DECRESCENTE (La tua richiesta originale)
+function showAllTasks() {
+  state.currentView = 'alltasks';
+  state.currentProject = null;
+  
+  const content = document.getElementById('main-content');
+  document.getElementById('topbar-title').innerText = "Tutti i Task";
+
+  if (!state.tasks || state.tasks.length === 0) {
+    content.innerHTML = "<p style='padding:20px;'>Nessun task creato.</p>";
+    return;
+  }
+
+  // Ordinamento: date più recenti/future in ALTO
+  const sorted = [...state.tasks].sort((a, b) => {
+    if (!a.date && !b.date) return 0;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return b.date.localeCompare(a.date); 
+  });
+
+  content.innerHTML = `
+    <div class="task-list" style="padding:20px;">
+      ${sorted.map(t => `
+        <div class="task-item" style="display:flex; align-items:center; gap:10px; background:white; margin-bottom:8px; padding:12px; border-radius:8px; border:1px solid #e0ddd5;">
+          <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTask('${t.id}')">
+          <div style="flex:1; cursor:pointer;" onclick="editTask('${t.id}')">
+            <div style="${t.done ? 'text-decoration:line-through; color:var(--text3);' : 'font-weight:600;'}">${t.title}</div>
+            <div style="font-size:12px; color:var(--text2);">${t.date ? '📅 ' + t.date : 'Senza data'}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// Funzione per aggiornare la vista attuale
+function refreshCurrent() {
+  if (state.currentView === 'alltasks') showAllTasks();
+  else if (state.currentView === 'dashboard') showDashboard();
+  // ... aggiungi altre viste se necessario
+}
+
+function toggleTask(id) {
+  const t = state.tasks.find(x => x.id === id);
+  if(t) {
+    t.done = !t.done;
+    save();
+    refreshCurrent();
+  }
+}
+
+window.onload = init;
+</script>
+</html>
