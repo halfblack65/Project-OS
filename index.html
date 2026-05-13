@@ -1,96 +1,115 @@
 <!DOCTYPE html>
 <html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ProjectOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+  :root {
+    --bg: #f5f2ee; --surface: #fdfaf7; --surface2: #f0ece6; --surface3: #e8e2da;
+    --border: rgba(140,120,100,0.12); --border2: rgba(140,120,100,0.22);
+    --text: #3a3028; --text2: #7a6a5a; --text3: #b0a090; --accent: #c97a5a;
+    --accent2: #b56848; --accent-dim: rgba(201,122,90,0.10); --sidebar-bg: #ede8e1;
+    --red: #c0614a; --amber: #c49040; --blue: #6a90a8; --green: #7a9e7e;
+    --purple: #9080a8; --teal: #6aa8a0; --tortora: #a89880; --radius: 10px; --radius-lg: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Nunito', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; overflow: hidden; }
+  .sidebar { width: 245px; background: var(--sidebar-bg); border-right: 1px solid var(--border2); display: flex; flex-direction: column; z-index: 10; }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); position: relative; }
+  .topbar { height: 65px; min-height: 65px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 26px; background: var(--bg); }
+  .content { flex: 1; overflow-y: auto; padding: 22px 26px; }
+  .task-item { display: flex; align-items: flex-start; gap: 11px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; }
+  .task-check { width: 18px; height: 18px; border: 2px solid var(--border2); border-radius: 5px; cursor: pointer; flex-shrink: 0; margin-top: 2px; }
+  .task-check.done { background: var(--green); border-color: var(--green); position: relative; }
+  .task-check.done::after { content: '✓'; color: #fff; font-size: 11px; position: absolute; left: 2px; top: -1px; }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div style="padding: 20px;"><strong style="font-size: 20px;">ProjectOS</strong></div>
+  <nav style="padding: 10px;">
+    <div style="cursor:pointer; padding: 10px;" onclick="showDashboard()">📊 Dashboard</div>
+    <div style="cursor:pointer; padding: 10px;" onclick="showAllTasks()">✅ Tutti i task</div>
+  </nav>
+</aside>
+
+<main class="main">
+  <div class="topbar"><h2 id="topbar-title">Dashboard</h2></div>
+  <div class="content" id="main-content">Caricamento...</div>
+</main>
+
 <script>
-// --- CONFIGURAZIONE ---
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzyhu6KFWc0VUPvO79Cr53HrP5Hp_ZUCtoZk3IxJWmTEsjhroZdpeH7fmdfwpk5ijymGA/exec'; 
+// --- CONFIGURAZIONE GOOGLE SCRIPT ---
+const SCRIPT_URL = 'INSERISCI_QUI_IL_TUO_URL_DI_APPS_SCRIPT'; 
 
 let state = {
   projects: [],
   tasks: [],
   notes: [],
-  collaborators: [],
-  currentView: 'dashboard',
-  currentProject: null
+  currentView: 'dashboard'
 };
 
-// Funzione Iniziale con "Paracadute"
 async function init() {
-  console.log("Inizializzazione...");
-  
-  // 1. Carica subito i dati locali per non far aspettare l'utente
-  const localData = localStorage.getItem('projectos_data');
-  if (localData) {
-    state = JSON.parse(localData);
-    refreshCurrent(); // Mostra subito quello che c'è
-  }
+  console.log("App avviata...");
+  // Carica da locale
+  const local = localStorage.getItem('projectos_data');
+  if (local) state = JSON.parse(local);
 
-  // 2. Prova a scaricare da Drive con un limite di tempo (5 secondi)
-  if (SCRIPT_URL && SCRIPT_URL.startsWith('http')) {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 5000);
-
+  // Prova a caricare da Drive
+  if (SCRIPT_URL.startsWith('http')) {
     try {
-      const response = await fetch(SCRIPT_URL, { signal: controller.signal });
-      clearTimeout(id);
-      const remoteData = await response.json();
-      if (remoteData) {
-        state = remoteData;
+      const resp = await fetch(SCRIPT_URL);
+      const remote = await resp.json();
+      if (remote) {
+        state = remote;
         localStorage.setItem('projectos_data', JSON.stringify(state));
-        console.log("Dati aggiornati da Drive");
-        refreshCurrent();
       }
-    } catch (e) {
-      console.warn("Drive non raggiungibile o timeout. Uso dati locali.");
-    }
+    } catch (e) { console.log("Drive offline"); }
   }
-  
-  renderProjectList();
-  if(state.currentView === 'dashboard') showDashboard();
+  refreshCurrent();
 }
 
-// SALVATAGGIO (Aggiornato per non bloccare l'interfaccia)
-async function save() {
+function save() {
   localStorage.setItem('projectos_data', JSON.stringify(state));
-  
-  if (SCRIPT_URL && SCRIPT_URL.startsWith('http')) {
-    // Usiamo no-cors per evitare problemi di permessi browser
+  if (SCRIPT_URL.startsWith('http')) {
     fetch(SCRIPT_URL, {
       method: 'POST',
       mode: 'no-cors',
       body: JSON.stringify(state)
-    }).catch(e => console.error("Errore invio Drive:", e));
+    }).catch(e => console.error(e));
   }
 }
 
-// ORDINAMENTO TASK DECRESCENTE (La tua richiesta originale)
 function showAllTasks() {
   state.currentView = 'alltasks';
-  state.currentProject = null;
-  
-  const content = document.getElementById('main-content');
   document.getElementById('topbar-title').innerText = "Tutti i Task";
+  const content = document.getElementById('main-content');
 
   if (!state.tasks || state.tasks.length === 0) {
-    content.innerHTML = "<p style='padding:20px;'>Nessun task creato.</p>";
+    content.innerHTML = "<p>Nessun task.</p>";
     return;
   }
 
-  // Ordinamento: date più recenti/future in ALTO
+  // ORDINAMENTO RICHIESTO: Più recenti in alto
   const sorted = [...state.tasks].sort((a, b) => {
-    if (!a.date && !b.date) return 0;
     if (!a.date) return 1;
     if (!b.date) return -1;
-    return b.date.localeCompare(a.date); 
+    return b.date.localeCompare(a.date);
   });
 
   content.innerHTML = `
-    <div class="task-list" style="padding:20px;">
+    <div class="task-list">
       ${sorted.map(t => `
-        <div class="task-item" style="display:flex; align-items:center; gap:10px; background:white; margin-bottom:8px; padding:12px; border-radius:8px; border:1px solid #e0ddd5;">
-          <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTask('${t.id}')">
-          <div style="flex:1; cursor:pointer;" onclick="editTask('${t.id}')">
-            <div style="${t.done ? 'text-decoration:line-through; color:var(--text3);' : 'font-weight:600;'}">${t.title}</div>
-            <div style="font-size:12px; color:var(--text2);">${t.date ? '📅 ' + t.date : 'Senza data'}</div>
+        <div class="task-item">
+          <div class="task-check ${t.done ? 'done' : ''}" onclick="toggleTask('${t.id}')"></div>
+          <div>
+            <div style="${t.done ? 'text-decoration:line-through' : ''}">${t.title}</div>
+            <small>${t.date || 'Senza data'}</small>
           </div>
         </div>
       `).join('')}
@@ -98,22 +117,23 @@ function showAllTasks() {
   `;
 }
 
-// Funzione per aggiornare la vista attuale
-function refreshCurrent() {
-  if (state.currentView === 'alltasks') showAllTasks();
-  else if (state.currentView === 'dashboard') showDashboard();
-  // ... aggiungi altre viste se necessario
+function showDashboard() {
+  state.currentView = 'dashboard';
+  document.getElementById('topbar-title').innerText = "Dashboard";
+  document.getElementById('main-content').innerHTML = "<h3>Benvenuto in ProjectOS</h3><p>Usa il menu a sinistra per navigare.</p>";
 }
 
 function toggleTask(id) {
   const t = state.tasks.find(x => x.id === id);
-  if(t) {
-    t.done = !t.done;
-    save();
-    refreshCurrent();
-  }
+  if (t) { t.done = !t.done; save(); refreshCurrent(); }
+}
+
+function refreshCurrent() {
+  if (state.currentView === 'alltasks') showAllTasks();
+  else showDashboard();
 }
 
 window.onload = init;
 </script>
+</body>
 </html>
